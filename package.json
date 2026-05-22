@@ -1,0 +1,30 @@
+{
+  "name": "b2b-stickers",
+  "private": true,
+  "version": "0.1.0",
+  "description": "B2B Stickers & Labels Print-on-Demand Platform",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "cd apps/api && alembic upgrade head",
+    "db:seed": "cd apps/api && python scripts/seed.py",
+    "api:dev": "cd apps/api && uvicorn app.main:app --reload --port 8000",
+    "worker:dev": "cd apps/api && celery -A app.workers.celery_app worker --loglevel=info",
+    "beat:dev": "cd apps/api && celery -A app.workers.celery_app beat --loglevel=info",
+    "dashboard:dev": "cd apps/dashboard && next dev --port 3001",
+    "site:dev": "cd apps/site && next dev --port 3000"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
