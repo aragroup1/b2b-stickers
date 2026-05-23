@@ -306,7 +306,7 @@ BEGIN
                           'subscriptions', 'subscription_shipments', 'orders', 'onetime_purchases',
                           'sample_orders', 'analytics_daily', 'abandoned_carts', 'jobs')
     LOOP
-        EXECUTE format('CREATE TRIGGER IF NOT EXISTS trg_%s_updated_at
+        EXECUTE format('CREATE TRIGGER trg_%s_updated_at
             BEFORE UPDATE ON %s
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();',
             t, t);
