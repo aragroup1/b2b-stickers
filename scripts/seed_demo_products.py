@@ -1,3 +1,4 @@
+import json
 #!/usr/bin/env python3
 """
 Seed demo products for development/testing without AI generation.
@@ -111,7 +112,7 @@ async def seed_demo_products(count: int = 20):
                 f"{trend['keyword'].title()} Stickers",
                 f"Premium {trend['keyword']} stickers for your small business. Printed on high-quality vinyl in the UK.",
                 [trend["keyword"], "stickers", "uk made", "small business", style],
-                {"mockup_urls": [], "style": style},
+                json.dumps({"mockup_urls": [], "style": style}),
             )
 
             # Generate variants
