@@ -16,7 +16,7 @@ class CreateTrendRequest(BaseModel):
     category: Optional[str] = None
 
 
-@router.get("/")
+@router.get("")
 async def list_trends(
     industry: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
@@ -44,7 +44,7 @@ async def list_trends(
     return {"trends": [dict(r) for r in rows], "limit": limit, "offset": offset}
 
 
-@router.post("/")
+@router.post("")
 async def create_trend(req: CreateTrendRequest, db=Depends(get_db), _=Depends(require_admin)):
     id = await db.fetchval(
         """

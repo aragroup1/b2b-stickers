@@ -74,7 +74,7 @@ async def admin_me(_=Depends(require_admin)):
     return {"authenticated": True, "role": "admin"}
 
 
-@router.get("/")
+@router.get("")
 async def admin_root(_=Depends(require_admin)):
     return {"message": "admin"}
 

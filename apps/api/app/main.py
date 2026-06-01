@@ -52,6 +52,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.ENV != "production" else None,
     redoc_url="/redoc" if settings.ENV != "production" else None,
+    redirect_slashes=True,
 )
 
 # Compression middleware

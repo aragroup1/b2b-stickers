@@ -7,7 +7,7 @@ from app.core.auth import require_admin
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-@router.get("/")
+@router.get("")
 async def list_products(
     status: Optional[str] = Query(None),
     min_quality: Optional[float] = Query(None),

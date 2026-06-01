@@ -146,7 +146,7 @@ async def my_shipments(request: Request, db=Depends(get_db)):
     return {"shipments": [dict(r) for r in rows]}
 
 
-@router.get("/")
+@router.get("")
 async def list_customers(
     limit: int = 100,
     offset: int = 0,

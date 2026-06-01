@@ -12,7 +12,7 @@ from app.services.email import EmailService
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-@router.get("/")
+@router.get("")
 async def list_orders(
     source: Optional[str] = Query(None),
     status: Optional[str] = Query(None),

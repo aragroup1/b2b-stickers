@@ -14,7 +14,7 @@ export default function IndustriesPage() {
   const [industries, setIndustries] = useState<Industry[]>([]);
 
   useEffect(() => {
-    fetch("/api/industries", { headers: getAuthHeaders() })
+    fetch("/api/industries/", { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((d) => setIndustries(d.industries || []));
   }, []);

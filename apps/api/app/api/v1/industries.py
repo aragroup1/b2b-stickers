@@ -13,13 +13,13 @@ class CreateIndustryRequest(BaseModel):
     parent_id: int | None = None
 
 
-@router.get("/")
+@router.get("")
 async def list_industries(db=Depends(get_db), _=Depends(require_admin)):
     rows = await db.fetch("SELECT * FROM industries ORDER BY name")
     return {"industries": [dict(r) for r in rows]}
 
 
-@router.post("/")
+@router.post("")
 async def create_industry(req: CreateIndustryRequest, db=Depends(get_db), _=Depends(require_admin)):
     id = await db.fetchval(
         "INSERT INTO industries (slug, name, parent_id) VALUES ($1, $2, $3) RETURNING id",

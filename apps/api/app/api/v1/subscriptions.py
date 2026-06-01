@@ -137,7 +137,7 @@ async def portal(request: Request, db=Depends(get_db)):
     return {"portal_url": portal_session.url}
 
 
-@router.get("/")
+@router.get("")
 async def list_subscriptions(db=Depends(get_db), _=Depends(require_admin)):
     rows = await db.fetch("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 100")
     return {"subscriptions": [dict(r) for r in rows]}

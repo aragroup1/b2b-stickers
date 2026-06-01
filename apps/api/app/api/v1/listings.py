@@ -32,7 +32,7 @@ async def push_listings(req: PushListingsRequest, db=Depends(get_db), _=Depends(
     return {"queued": len(results), "results": results}
 
 
-@router.get("/")
+@router.get("")
 async def list_listings(
     channel: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
