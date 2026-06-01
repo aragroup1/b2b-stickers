@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function checkAuth() {
     try {
-      const res = await fetch("/api/v1/admin/me", {
+      const res = await fetch("/api/admin/me", {
         credentials: "include",
       });
       setIsAuthenticated(res.ok);
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(password: string): Promise<boolean> {
     try {
-      const res = await fetch("/api/v1/admin/login", {
+      const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     try {
-      await fetch("/api/v1/admin/logout", {
+      await fetch("/api/admin/logout", {
         method: "POST",
         credentials: "include",
       });
