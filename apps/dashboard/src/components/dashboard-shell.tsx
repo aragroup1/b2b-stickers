@@ -18,7 +18,7 @@ import {
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/generate", label: "Generate", icon: Sparkles },
+  { href: "/generate", label: "Generate Hub", icon: Sparkles },
   { href: "/industries", label: "Industries", icon: Factory },
   { href: "/listings", label: "Listings", icon: Tag },
   { href: "/orders", label: "Orders", icon: ShoppingCart },
