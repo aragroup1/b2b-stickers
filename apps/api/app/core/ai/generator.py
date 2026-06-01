@@ -37,8 +37,25 @@ class AIGenerator:
         # Mock generation mode when no valid Replicate token is configured
         if not settings.REPLICATE_API_TOKEN or settings.REPLICATE_API_TOKEN in ("r8_...", "r8_", ""):
             logger.warning(f"No valid REPLICATE_API_TOKEN configured, using mock generation for '{keyword}'")
+            # Use placehold.co with unique colors per style for visual variety
+            style_colors = {
+                "kawaii": "FFB6C1",
+                "retro_badge": "CD853F",
+                "minimal_logo": "2F4F4F",
+                "hand_drawn": "DEB887",
+                "brewery_emblem": "8B4513",
+                "vintage_americana": "B22222",
+                "holographic_ready": "9932CC",
+                "motivational_quote": "4682B4",
+                "novelty_meme": "FF6347",
+                "packaging_seal": "20B2AA",
+                "cottagecore": "F0E68C",
+                "y2k": "FF1493",
+            }
+            color = style_colors.get(style, "808080")
+            label = f"{keyword[:15]}|{style[:10]}"
             return {
-                "image_url": f"https://picsum.photos/seed/{keyword.replace(' ', '')}{style}/1024/1024",
+                "image_url": f"https://placehold.co/600x600/{color}/FFFFFF/png?text={label}",
                 "model_used": model_cfg.key,
                 "prompt": prompt_cfg["prompt"],
                 "negative_prompt": prompt_cfg["negative_prompt"],
