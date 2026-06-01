@@ -8,15 +8,16 @@ import {
   CheckCircle,
   AlertCircle,
   TrendingUp,
-  BarChart3,
   Zap,
   Search,
-  Filter,
   ArrowUpDown,
   Clock,
   Image,
   CheckSquare,
-  Layers,
+  Target,
+  Play,
+  BarChart3,
+  Package,
 } from "lucide-react";
 
 interface Trend {
@@ -30,7 +31,6 @@ interface Trend {
   designs_generated: number;
   designs_allocated: number;
   product_count: number;
-  demand_tier?: string;
 }
 
 interface Category {
@@ -40,17 +40,32 @@ interface Category {
   avg_trend_score: number | null;
 }
 
+interface PlanAllocation {
+  id: number;
+  keyword: string;
+  search_volume: number;
+  volume_percent: number;
+  target_designs: number;
+  already_generated: number;
+  remaining: number;
+  demand_tier: string;
+}
+
+interface GenerationPlan {
+  target_total: number;
+  current_products: number;
+  total_trends: number;
+  total_search_volume: number;
+  total_to_generate: number;
+  estimated_cost_gbp: number;
+  estimated_time_minutes: number;
+  allocations: PlanAllocation[];
+}
+
 const STYLES = [
-  "kawaii",
-  "retro_badge",
-  "minimal_logo",
-  "hand_drawn",
-  "brewery_emblem",
-  "vintage_americana",
-  "holographic_ready",
-  "motivational_quote",
-  "novelty_meme",
-  "packaging_seal",
+  "kawaii", "retro_badge", "minimal_logo", "hand_drawn",
+  "brewery_emblem", "vintage_americana", "holographic_ready",
+  "motivational_quote", "novelty_meme", "packaging_seal",
 ];
 
 const DEMAND_COLORS: Record<string, string> = {
@@ -71,13 +86,18 @@ export default function GeneratePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [filterCategory, setFilterCategory] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"explorer" | "queue" | "gallery" | "approval">("explorer");
+  const [activeTab, setActiveTab] = useState<"explorer" | "scale" | "queue" | "gallery" | "approval">("explorer");
   const [queueStats, setQueueStats] = useState<any>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [galleryProducts, setGalleryProducts] = useState<any[]>([]);
   const [galleryFilter, setGalleryFilter] = useState("all");
   const [approvalProducts, setApprovalProducts] = useState<any[]>([]);
   const [selectedForApproval, setSelectedForApproval] = useState<number[]>([]);
+  
+  // Scale to 1000 state
+  const [plan, setPlan] = useState<GenerationPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [scaleLoading, setScaleLoading] = useState(false);
 
   useEffect(() => {
     loadTrends();
@@ -86,6 +106,7 @@ export default function GeneratePage() {
     loadJobs();
     loadGallery();
     loadApprovalQueue();
+    loadPlan();
   }, []);
 
   async function loadTrends() {
@@ -131,6 +152,19 @@ export default function GeneratePage() {
     setApprovalProducts(data.products || []);
   }
 
+  async function loadPlan() {
+    setPlanLoading(true);
+    try {
+      const res = await fetch("/api/generation/plan?target_total=1000", { headers: getAuthHeaders() });
+      const data = await res.json();
+      setPlan(data);
+    } catch (e) {
+      console.error("Failed to load plan", e);
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
   async function handleGenerate() {
     if (selectedTrends.length === 0) {
       setResult({ success: false, message: "Select at least one trend" });
@@ -168,6 +202,38 @@ export default function GeneratePage() {
       setResult({ success: false, message: "Network error" });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleScaleGenerate() {
+    if (!plan || plan.total_to_generate === 0) {
+      setResult({ success: false, message: "Nothing to generate — target already met or no plan available" });
+      return;
+    }
+
+    setScaleLoading(true);
+    setResult(null);
+
+    try {
+      const res = await fetch("/api/generation/volume-weighted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ target_total: 1000, mode: "production" }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setResult({ success: true, message: `Scale generation queued! ${plan.total_to_generate} products`, job_id: data.job_id });
+        loadQueueStats();
+        loadJobs();
+        loadPlan();
+      } else {
+        setResult({ success: false, message: data.detail || "Scale generation failed" });
+      }
+    } catch (e) {
+      setResult({ success: false, message: "Network error" });
+    } finally {
+      setScaleLoading(false);
     }
   }
 
@@ -228,35 +294,82 @@ export default function GeneratePage() {
       </div>
 
       {/* Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-white border rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Package className="w-4 h-4" />
+            Products
+          </div>
+          <div className="text-xl font-bold">{plan?.current_products || 0}</div>
+          <div className="text-xs text-gray-400">of 1,000 target</div>
+        </div>
         <div className="bg-white border rounded-lg p-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <TrendingUp className="w-4 h-4" />
-            Total Search Volume
+            Search Volume
           </div>
-          <div className="text-xl font-bold">{totalVolume.toLocaleString()}</div>
+          <div className="text-xl font-bold">{(totalVolume / 1000).toFixed(0)}K</div>
+          <div className="text-xs text-gray-400">monthly</div>
         </div>
         <div className="bg-white border rounded-lg p-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Zap className="w-4 h-4" />
-            High Demand Trends
+            High Demand
           </div>
           <div className="text-xl font-bold">{highDemandCount}</div>
+          <div className="text-xs text-gray-400">trends</div>
         </div>
         <div className="bg-white border rounded-lg p-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Clock className="w-4 h-4" />
-            Queue Jobs
+            Queue
           </div>
-          <div className="text-xl font-bold">{queueStats?.queue?.running || 0} running</div>
+          <div className="text-xl font-bold">{queueStats?.queue?.running || 0}</div>
+          <div className="text-xs text-gray-400">running</div>
         </div>
         <div className="bg-white border rounded-lg p-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <CheckSquare className="w-4 h-4" />
-            Pending Approval
+            Pending
           </div>
           <div className="text-xl font-bold">{approvalProducts.length}</div>
+          <div className="text-xs text-gray-400">approval</div>
         </div>
+      </div>
+
+      {/* Progress to 1000 */}
+      <div className="bg-gray-900 text-white rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Target className="w-5 h-5" />
+            <span className="font-semibold">Scale to 1,000 Products</span>
+          </div>
+          <span className="text-sm">
+            {plan?.current_products || 0} / 1,000
+            {plan && (
+              <span className="text-gray-400 ml-2">
+                ({Math.round((plan.current_products / 1000) * 100)}%)
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="w-full h-2 bg-gray-700 rounded-full">
+          <div
+            className="h-2 bg-emerald-500 rounded-full transition-all"
+            style={{ width: `${Math.min(((plan?.current_products || 0) / 1000) * 100, 100)}%` }}
+          />
+        </div>
+        {plan && plan.total_to_generate > 0 && (
+          <div className="flex items-center justify-between mt-2 text-sm text-gray-400">
+            <span>{plan.total_to_generate} products needed • ~£{plan.estimated_cost_gbp} • ~{plan.estimated_time_minutes} min</span>
+            <button
+              onClick={() => setActiveTab("scale")}
+              className="text-emerald-400 hover:text-emerald-300 font-medium"
+            >
+              View Plan →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -264,6 +377,7 @@ export default function GeneratePage() {
         <div className="flex gap-1">
           {[
             { key: "explorer", label: "SEO Explorer", icon: Search },
+            { key: "scale", label: "Scale to 1000", icon: Target },
             { key: "queue", label: "Queue", icon: Clock },
             { key: "gallery", label: "Gallery", icon: Image },
             { key: "approval", label: "Approval", icon: CheckSquare },
@@ -293,7 +407,7 @@ export default function GeneratePage() {
           {/* Category Demand Cards */}
           <div>
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Demand by Category</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
               {categories.map((cat) => (
                 <button
                   key={cat.category}
@@ -355,7 +469,7 @@ export default function GeneratePage() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                Trends ({filteredTrends.length} with search volume)
+                Trends ({filteredTrends.length})
               </h2>
               <div className="text-sm text-gray-500">
                 {selectedTrends.length} selected →{" "}
@@ -368,7 +482,7 @@ export default function GeneratePage() {
                 const demand =
                   (trend.search_volume || 0) >= 10000
                     ? "high"
-                    : (trend.search_volume || 0) >= 1000
+                    : (trend.search_volume || 0) >= 3000
                     ? "medium"
                     : "low";
                 const isSelected = selectedTrends.includes(trend.id);
@@ -404,7 +518,7 @@ export default function GeneratePage() {
                       <span>•</span>
                       <span>{trend.designs_generated}/{trend.designs_allocated || 0} designs</span>
                     </div>
-                    {coverage > 0 && (
+                    {trend.designs_allocated > 0 && (
                       <div className={`mt-2 h-1 rounded-full ${isSelected ? "bg-blue-800" : "bg-gray-100"}`}>
                         <div
                           className={`h-1 rounded-full transition-all ${isSelected ? "bg-blue-300" : "bg-blue-500"}`}
@@ -469,6 +583,99 @@ export default function GeneratePage() {
               {loading ? "Queueing..." : "Generate"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Scale to 1000 Tab */}
+      {activeTab === "scale" && (
+        <div className="space-y-6">
+          {planLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : plan ? (
+            <>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-white border rounded-lg p-4">
+                  <div className="text-sm text-gray-500">Current Products</div>
+                  <div className="text-2xl font-bold">{plan.current_products}</div>
+                </div>
+                <div className="bg-white border rounded-lg p-4">
+                  <div className="text-sm text-gray-500">To Generate</div>
+                  <div className="text-2xl font-bold text-blue-600">{plan.total_to_generate}</div>
+                </div>
+                <div className="bg-white border rounded-lg p-4">
+                  <div className="text-sm text-gray-500">Est. Cost</div>
+                  <div className="text-2xl font-bold">£{plan.estimated_cost_gbp}</div>
+                </div>
+                <div className="bg-white border rounded-lg p-4">
+                  <div className="text-sm text-gray-500">Est. Time</div>
+                  <div className="text-2xl font-bold">{Math.round(plan.estimated_time_minutes / 60)}h</div>
+                </div>
+              </div>
+
+              {/* Generate Button */}
+              <div className="bg-gray-50 border rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold">Volume-Weighted Generation</div>
+                  <div className="text-sm text-gray-500">
+                    Distributes {plan.total_to_generate} products across {plan.total_trends} trends proportional to search volume
+                  </div>
+                </div>
+                <button
+                  onClick={handleScaleGenerate}
+                  disabled={scaleLoading || plan.total_to_generate === 0}
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {scaleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  {scaleLoading ? "Queueing..." : "Generate All"}
+                </button>
+              </div>
+
+              {/* Allocation Table */}
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium text-gray-500">Trend</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-500">Volume</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-500">%</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-500">Target</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-500">Done</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-500">Remaining</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-500">Tier</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {plan.allocations.map((alloc) => (
+                      <tr key={alloc.id} className="border-b last:border-0 hover:bg-gray-50">
+                        <td className="px-4 py-2 font-medium">{alloc.keyword}</td>
+                        <td className="px-4 py-2 text-right">{alloc.search_volume.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right">{alloc.volume_percent}%</td>
+                        <td className="px-4 py-2 text-right">{alloc.target_designs}</td>
+                        <td className="px-4 py-2 text-right text-gray-500">{alloc.already_generated}</td>
+                        <td className="px-4 py-2 text-right">
+                          {alloc.remaining > 0 ? (
+                            <span className="font-semibold text-blue-600">{alloc.remaining}</span>
+                          ) : (
+                            <span className="text-emerald-600">✓</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${DEMAND_COLORS[alloc.demand_tier]}`}>
+                            {alloc.demand_tier}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-12 text-gray-500">Failed to load generation plan</div>
+          )}
         </div>
       )}
 

@@ -1,4 +1,4 @@
-from celery import shared_task
+from celery import shared_task, chord, group
 from loguru import logger
 import asyncio
 import json
@@ -138,4 +138,205 @@ def generate_batch(self, trend_ids: list[int], styles: list[str], designs_per_co
         finally:
             await close_pool()
 
+    return asyncio.run(_run())
+
+
+@shared_task(bind=True)
+def generate_for_trend(self, trend_id: int, styles: list[str], designs_per_combo: int, mode: str = "production", parent_job_id: str = ""):
+    """Generate products for a single trend. Used as a sub-task in volume-weighted generation."""
+    async def _run():
+        await init_pool()
+        try:
+            svc = ProductGenerationService()
+            pool = await get_pool()
+            
+            # Get trend info for logging
+            trend = await pool.fetchrow("SELECT keyword, search_volume FROM trends WHERE id = $1", trend_id)
+            keyword = trend["keyword"] if trend else f"trend-{trend_id}"
+            
+            logger.info(f"[VolumeWeighted] Generating for '{keyword}': {designs_per_combo} designs × {len(styles)} styles = {designs_per_combo * len(styles)} products")
+            
+            ids = await svc.generate_from_trend(trend_id, styles, designs_per_combo, mode)
+            
+            # Update trend counters
+            await pool.execute(
+                "UPDATE trends SET designs_generated = designs_generated + $1 WHERE id = $2",
+                len(ids), trend_id
+            )
+            
+            logger.info(f"[VolumeWeighted] Completed '{keyword}': {len(ids)} products generated")
+            
+            return {
+                "trend_id": trend_id,
+                "keyword": keyword,
+                "generated": len(ids),
+                "product_ids": ids,
+            }
+        finally:
+            await close_pool()
+    
+    return asyncio.run(_run())
+
+
+@shared_task(bind=True)
+def generate_volume_weighted(self, target_total: int = 1000, mode: str = "production"):
+    """Generate products distributed by search volume across all trends.
+    
+    Calculates designs per trend proportionally, then queues individual
+    trend generation tasks.
+    """
+    async def _run():
+        await init_pool()
+        try:
+            pool = await get_pool()
+            
+            # Get all trends with search volume
+            trends = await pool.fetch(
+                "SELECT id, keyword, search_volume, designs_generated FROM trends WHERE search_volume IS NOT NULL ORDER BY search_volume DESC"
+            )
+            
+            if not trends:
+                return {"error": "No trends with search volume found"}
+            
+            total_volume = sum(t["search_volume"] or 0 for t in trends)
+            
+            # Calculate allocation per trend
+            allocations = []
+            for trend in trends:
+                vol = trend["search_volume"] or 0
+                # Proportional allocation, minimum 2 designs
+                target_designs = max(2, round((vol / total_volume) * target_total))
+                # Account for already generated
+                remaining = max(0, target_designs - (trend["designs_generated"] or 0))
+                allocations.append({
+                    "id": trend["id"],
+                    "keyword": trend["keyword"],
+                    "volume": vol,
+                    "target_designs": target_designs,
+                    "already_generated": trend["designs_generated"] or 0,
+                    "remaining": remaining,
+                })
+            
+            # Adjust to hit exactly target_total
+            current_total = sum(a["target_designs"] for a in allocations)
+            if current_total != target_total:
+                # Adjust largest trend to make up difference
+                diff = target_total - current_total
+                allocations[0]["target_designs"] += diff
+                allocations[0]["remaining"] = max(0, allocations[0]["target_designs"] - allocations[0]["already_generated"])
+            
+            # Update designs_allocated
+            for alloc in allocations:
+                await pool.execute(
+                    "UPDATE trends SET designs_allocated = $1 WHERE id = $2",
+                    alloc["target_designs"], alloc["id"]
+                )
+            
+            # Filter to trends that still need products
+            needed = [a for a in allocations if a["remaining"] > 0]
+            total_to_generate = sum(a["remaining"] for a in needed)
+            
+            # Create master job record
+            try:
+                await pool.execute(
+                    """INSERT INTO jobs (id, kind, status, params, progress, created_at, updated_at)
+                       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                       ON CONFLICT (id) DO UPDATE SET
+                         status = EXCLUDED.status,
+                         params = EXCLUDED.params,
+                         progress = EXCLUDED.progress,
+                         updated_at = NOW()""",
+                    str(self.request.id),
+                    "volume_weighted",
+                    "running",
+                    json.dumps({
+                        "target_total": target_total,
+                        "mode": mode,
+                        "trends_count": len(needed),
+                        "total_to_generate": total_to_generate,
+                        "allocations": [{"id": a["id"], "keyword": a["keyword"], "remaining": a["remaining"]} for a in needed],
+                    }),
+                    json.dumps({"completed": 0, "total": total_to_generate}),
+                )
+            except Exception as e:
+                logger.warning(f"Could not create master job record: {e}")
+            
+            # All available styles
+            all_styles = [
+                "kawaii", "retro_badge", "minimal_logo", "hand_drawn",
+                "brewery_emblem", "vintage_americana", "holographic_ready",
+                "motivational_quote", "novelty_meme", "packaging_seal",
+                "cottagecore", "y2k",
+            ]
+            
+            generated_total = 0
+            results = []
+            
+            # Process each trend sequentially (to avoid DB pool exhaustion)
+            svc = ProductGenerationService()
+            
+            for alloc in needed:
+                designs_per_combo = max(1, alloc["remaining"] // len(all_styles))
+                extra = alloc["remaining"] % len(all_styles)
+                
+                # Distribute extra designs across first N styles
+                styles_for_trend = all_styles[:]
+                
+                logger.info(f"[VolumeWeighted] Trend '{alloc['keyword']}': generating {alloc['remaining']} products")
+                
+                # Generate directly (not through Celery subtask to avoid nested asyncio.run)
+                ids = await svc.generate_from_trend(
+                    alloc["id"],
+                    styles_for_trend,
+                    designs_per_combo + (1 if extra > 0 else 0),
+                    mode,
+                )
+                
+                count = len(ids)
+                generated_total += count
+                results.append({
+                    "trend_id": alloc["id"],
+                    "keyword": alloc["keyword"],
+                    "generated": count,
+                    "product_ids": ids,
+                })
+                
+                # Update trend counters
+                await pool.execute(
+                    "UPDATE trends SET designs_generated = designs_generated + $1 WHERE id = $2",
+                    count, alloc["id"]
+                )
+                
+                # Update master job progress
+                try:
+                    await pool.execute(
+                        "UPDATE jobs SET progress = $1, updated_at = NOW() WHERE id = $2",
+                        json.dumps({"completed": generated_total, "total": total_to_generate}),
+                        str(self.request.id),
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update master job: {e}")
+            
+            # Mark master job complete
+            try:
+                await pool.execute(
+                    "UPDATE jobs SET status = $1, result = $2, updated_at = NOW() WHERE id = $3",
+                    "completed",
+                    json.dumps({"generated": generated_total, "trends": len(needed)}),
+                    str(self.request.id),
+                )
+            except Exception as e:
+                logger.warning(f"Could not complete master job: {e}")
+            
+            logger.info(f"[VolumeWeighted] COMPLETE: {generated_total} products across {len(needed)} trends")
+            
+            return {
+                "generated": generated_total,
+                "trends_processed": len(needed),
+                "target_total": target_total,
+                "allocations": allocations,
+            }
+        finally:
+            await close_pool()
+    
     return asyncio.run(_run())
