@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getAuthHeaders } from "~/lib/auth";
 
 interface DashboardData {
   products: { total: number; approved: number; active: number };
@@ -14,7 +15,7 @@ export default function DashboardHome() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/analytics/dashboard")
+    fetch("/api/analytics/dashboard", { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((d) => {
         setData(d);

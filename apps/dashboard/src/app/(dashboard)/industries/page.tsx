@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getAuthHeaders } from "~/lib/auth";
 
 interface Industry {
   id: number;
@@ -13,7 +14,7 @@ export default function IndustriesPage() {
   const [industries, setIndustries] = useState<Industry[]>([]);
 
   useEffect(() => {
-    fetch("/api/industries")
+    fetch("/api/industries", { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((d) => setIndustries(d.industries || []));
   }, []);

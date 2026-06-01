@@ -23,6 +23,7 @@ class AdminLoginRequest(BaseModel):
 class AdminLoginResponse(BaseModel):
     success: bool
     expires_at: str
+    token: str
 
 
 @router.post("/login", response_model=AdminLoginResponse)
@@ -50,6 +51,7 @@ async def admin_login(req: AdminLoginRequest, response: Response):
     return AdminLoginResponse(
         success=True,
         expires_at=expires.isoformat(),
+        token=token,
     )
 
 

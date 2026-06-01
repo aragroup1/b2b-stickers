@@ -13,10 +13,12 @@ import {
   LogOut,
   Layers,
   Factory,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/generate", label: "Generate", icon: Sparkles },
   { href: "/industries", label: "Industries", icon: Factory },
   { href: "/listings", label: "Listings", icon: Tag },
   { href: "/orders", label: "Orders", icon: ShoppingCart },

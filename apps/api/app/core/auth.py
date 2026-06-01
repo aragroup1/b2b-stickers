@@ -45,9 +45,24 @@ def verify_admin_token(token: str) -> bool:
         return False
 
 
+def _extract_token_from_request(request: Request) -> Optional[str]:
+    """Extract admin token from cookie or Authorization header."""
+    # Try cookie first
+    token = request.cookies.get(ADMIN_TOKEN_COOKIE)
+    if token:
+        return token
+
+    # Try Authorization header (Bearer token)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+
+    return None
+
+
 async def require_admin(request: Request) -> None:
     """FastAPI dependency: raise 401 if the request lacks a valid admin token."""
-    token = request.cookies.get(ADMIN_TOKEN_COOKIE)
+    token = _extract_token_from_request(request)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
