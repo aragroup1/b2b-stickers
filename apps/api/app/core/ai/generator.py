@@ -34,6 +34,20 @@ class AIGenerator:
 
         logger.info(f"Generating '{keyword}' with {model_cfg.key} ({model_cfg.replicate_model})")
 
+        # Mock generation mode when no valid Replicate token is configured
+        if not settings.REPLICATE_API_TOKEN or settings.REPLICATE_API_TOKEN in ("r8_...", "r8_", ""):
+            logger.warning(f"No valid REPLICATE_API_TOKEN configured, using mock generation for '{keyword}'")
+            return {
+                "image_url": f"https://picsum.photos/seed/{keyword.replace(' ', '')}{style}/1024/1024",
+                "model_used": model_cfg.key,
+                "prompt": prompt_cfg["prompt"],
+                "negative_prompt": prompt_cfg["negative_prompt"],
+                "generation_cost": 0.0,
+                "quality_score": 75.0,
+                "attributes": {"mock": True, "style": style},
+                "vision_warnings": ["Mock generation - no Replicate token configured"],
+            }
+
         # Run Replicate inference
         output_urls = await self.provider.generate(
             model=model_cfg.replicate_model,

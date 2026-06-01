@@ -1,6 +1,7 @@
 from celery import shared_task
 from loguru import logger
 import asyncio
+import json
 
 from app.config import settings
 from app.core.subscriptions.fulfillment import SubscriptionFulfillment
@@ -97,17 +98,41 @@ def generate_batch(self, trend_ids: list[int], styles: list[str], designs_per_co
         try:
             svc = ProductGenerationService()
             results = []
+            total = len(trend_ids) * len(styles) * designs_per_combo
+            
+            # Create or update job record
+            pool = await get_pool()
+            try:
+                await pool.execute(
+                    """INSERT INTO jobs (id, kind, status, params, progress, created_at, updated_at)
+                       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                       ON CONFLICT (id) DO UPDATE SET
+                         status = EXCLUDED.status,
+                         progress = EXCLUDED.progress,
+                         updated_at = NOW()""",
+                    self.request.id,
+                    "generate_batch",
+                    "running",
+                    json.dumps({"trend_ids": trend_ids, "styles": styles, "designs_per_combo": designs_per_combo, "mode": mode}),
+                    json.dumps({"completed": 0, "total": total}),
+                )
+            except Exception as e:
+                logger.warning(f"Could not create job record: {e}")
+            
             for tid in trend_ids:
                 ids = await svc.generate_from_trend(tid, styles, designs_per_combo, mode)
                 results.extend(ids)
 
-                # Update job progress using the shared pool
-                pool = await get_pool()
-                await pool.execute(
-                    "UPDATE jobs SET progress = $1, updated_at = NOW() WHERE id = $2",
-                    {"completed": len(results), "total": len(trend_ids) * len(styles) * designs_per_combo},
-                    self.request.id,
-                )
+                # Update job progress
+                try:
+                    await pool.execute(
+                        "UPDATE jobs SET progress = $1, status = $2, updated_at = NOW() WHERE id = $3",
+                        json.dumps({"completed": len(results), "total": total}),
+                        "completed" if len(results) >= total else "running",
+                        self.request.id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update job progress: {e}")
 
             return {"generated": len(results), "product_ids": results}
         finally:

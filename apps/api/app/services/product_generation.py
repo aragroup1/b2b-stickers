@@ -1,3 +1,4 @@
+import json
 from typing import List
 
 from loguru import logger
@@ -55,7 +56,7 @@ class ProductGenerationService:
                     result["image_url"],
                     result["generation_cost"],
                     result["quality_score"],
-                    result["attributes"],
+                    json.dumps(result["attributes"]),
                 )
 
                 # Generate mockups (async but don't block on failure)
@@ -79,7 +80,7 @@ class ProductGenerationService:
                     f"{trend['keyword'].title()} Stickers",
                     "",
                     [],
-                    {"mockup_urls": mockup_urls},
+                    json.dumps({"mockup_urls": mockup_urls}),
                 )
 
                 # Generate variants (simplified: size × pack only)
