@@ -62,4 +62,10 @@ async def ensure_schema() -> None:
             "UPDATE trends SET volume_source = 'manual' "
             "WHERE search_volume IS NOT NULL AND volume_source IS NULL"
         )
+        # One-time heal: an early Google Trends run wrote 0 for long-tail terms it has
+        # no data for. Treat those as 'unknown' (NULL) rather than 'zero demand'.
+        await conn.execute(
+            "UPDATE trends SET search_volume = NULL, volume_source = 'manual' "
+            "WHERE volume_source = 'google_trends' AND COALESCE(search_volume, 0) = 0"
+        )
     logger.info("Schema ensured: trends.trend_interest, trends.volume_source")

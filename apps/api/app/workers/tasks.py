@@ -200,10 +200,13 @@ def refresh_trend_volumes(self, limit: int = 200):
             from app.services.keyword_volume import KeywordVolumeService, SCALE
             svc = KeywordVolumeService()
             interest = svc.fetch_interest([r["keyword"] for r in rows])
-            updated = 0
+            updated, skipped = 0, 0
             for r in rows:
-                score = interest.get(r["keyword"])
-                if score is None:
+                score = interest.get(r["keyword"]) or 0
+                if score <= 0:
+                    # Google Trends has no usable signal for this (often long-tail B2B)
+                    # term — never overwrite existing data with a meaningless 0.
+                    skipped += 1
                     continue
                 await pool.execute(
                     "UPDATE trends SET trend_interest = $1, search_volume = $2, "
@@ -211,8 +214,8 @@ def refresh_trend_volumes(self, limit: int = 200):
                     int(score), int(score * SCALE), r["id"],
                 )
                 updated += 1
-            logger.info(f"refresh_trend_volumes: updated {updated}/{len(rows)} trends")
-            return {"updated": updated, "eligible": len(rows)}
+            logger.info(f"refresh_trend_volumes: updated {updated}, skipped {skipped} (no Trends data)")
+            return {"updated": updated, "skipped": skipped, "eligible": len(rows)}
         finally:
             await close_pool()
 
