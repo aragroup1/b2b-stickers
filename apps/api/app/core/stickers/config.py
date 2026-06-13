@@ -57,14 +57,16 @@ def generate_variants(product_id: int) -> List[StickerVariant]:
 
 def get_recurring_price(retail_price: float, discount_percent: int = 10) -> float:
     """Compute discounted recurring subscription price."""
-    return round(retail_price * (1 - discount_percent / 100), 2)
+    # Coerce to float: DB NUMERIC columns come back as Decimal, which can't be
+    # multiplied by a Python float (raises TypeError).
+    return round(float(retail_price) * (1 - discount_percent / 100), 2)
 
 
 def compute_vat_inclusive_price(price_ex_vat: float, vat_rate_percent: float = 20.0) -> float:
     """Add VAT to a price."""
-    return round(price_ex_vat * (1 + vat_rate_percent / 100), 2)
+    return round(float(price_ex_vat) * (1 + vat_rate_percent / 100), 2)
 
 
 def compute_vat_amount(price_ex_vat: float, vat_rate_percent: float = 20.0) -> float:
     """Compute VAT amount from ex-VAT price."""
-    return round(price_ex_vat * (vat_rate_percent / 100), 2)
+    return round(float(price_ex_vat) * (vat_rate_percent / 100), 2)
