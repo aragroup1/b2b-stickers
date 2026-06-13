@@ -1,3 +1,6 @@
+import csv
+import io
+
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
 from typing import Optional, Literal
@@ -155,3 +158,119 @@ async def trends_analytics(db=Depends(get_db)):
         "with_search_volume": with_volume,
         "total_search_volume": int(total_volume),
     }
+
+
+# ---------------------------------------------------------------------------
+# Real search-volume signal: Keyword Planner import (#1) + Google Trends (#2)
+# ---------------------------------------------------------------------------
+
+def _num(s: str) -> Optional[int]:
+    """Parse a single number, tolerating commas and K/M suffixes."""
+    s = s.strip().upper().replace(",", "")
+    mult = 1
+    if s.endswith("K"):
+        mult, s = 1_000, s[:-1]
+    elif s.endswith("M"):
+        mult, s = 1_000_000, s[:-1]
+    try:
+        return int(float(s) * mult)
+    except ValueError:
+        return None
+
+
+def _parse_volume(raw: str) -> Optional[int]:
+    """Parse a Keyword Planner volume cell: plain, K/M suffix, or a range -> midpoint."""
+    s = (raw or "").strip().replace('"', "").replace(" ", "").replace("\xa0", " ")
+    if not s:
+        return None
+    for sep in ("–", "—", " to ", " - ", "-"):
+        if sep in s:
+            parts = [p for p in (x.strip() for x in s.split(sep)) if p]
+            if len(parts) == 2:
+                lo, hi = _num(parts[0]), _num(parts[1])
+                if lo is not None and hi is not None:
+                    return int((lo + hi) / 2)
+            break
+    return _num(s)
+
+
+def _parse_keyword_planner(text: str) -> list[tuple[str, int]]:
+    """Parse a pasted Keyword Planner export (CSV or TSV) into (keyword, volume) pairs.
+
+    Detects the header row (cells containing 'keyword' and 'search'); falls back to
+    first column = keyword and first parseable numeric column = volume.
+    """
+    text = (text or "").replace("﻿", "")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    delim = "\t" if "\t" in lines[0] else ","
+    rows = list(csv.reader(io.StringIO("\n".join(lines)), delimiter=delim))
+
+    kw_col, vol_col, start = 0, None, 0
+    for idx, row in enumerate(rows[:5]):
+        lowered = [c.strip().lower() for c in row]
+        kw_hit = next((i for i, c in enumerate(lowered) if "keyword" in c), None)
+        vol_hit = next((i for i, c in enumerate(lowered) if "search" in c), None)
+        if kw_hit is not None and vol_hit is not None:
+            kw_col, vol_col, start = kw_hit, vol_hit, idx + 1
+            break
+
+    out: list[tuple[str, int]] = []
+    for row in rows[start:]:
+        if not row or len(row) <= kw_col:
+            continue
+        keyword = row[kw_col].strip()
+        if not keyword:
+            continue
+        vol = _parse_volume(row[vol_col]) if (vol_col is not None and len(row) > vol_col) else None
+        if vol is None:
+            for i, cell in enumerate(row):
+                if i == kw_col:
+                    continue
+                vol = _parse_volume(cell)
+                if vol is not None:
+                    break
+        if vol is not None:
+            out.append((keyword, vol))
+    return out
+
+
+class ImportVolumesRequest(BaseModel):
+    csv_text: str
+
+
+@router.post("/import-volumes")
+async def import_volumes(req: ImportVolumesRequest, db=Depends(get_db), _=Depends(require_admin)):
+    """Import real search volumes from a pasted Google Keyword Planner export.
+
+    Matches existing trends by keyword (case-insensitive) and sets search_volume +
+    volume_source='keyword_planner'. Unmatched keywords are reported, not created.
+    """
+    pairs = _parse_keyword_planner(req.csv_text)
+    if not pairs:
+        return {
+            "parsed": 0, "matched": 0, "unmatched": [],
+            "error": "No keyword/volume rows found. Paste the Keyword Planner CSV/TSV export.",
+        }
+    matched, unmatched = 0, []
+    for keyword, volume in pairs:
+        updated_id = await db.fetchval(
+            "UPDATE trends SET search_volume = $1, volume_source = 'keyword_planner' "
+            "WHERE LOWER(keyword) = LOWER($2) RETURNING id",
+            volume, keyword,
+        )
+        if updated_id:
+            matched += 1
+        else:
+            unmatched.append(keyword)
+    return {"parsed": len(pairs), "matched": matched, "unmatched": unmatched}
+
+
+@router.post("/refresh-volumes")
+async def refresh_volumes(limit: int = Query(200, ge=1, le=1000), _=Depends(require_admin)):
+    """Queue a Google Trends refresh for trends lacking Keyword Planner data."""
+    from app.workers.tasks import refresh_trend_volumes
+
+    job = refresh_trend_volumes.delay(limit=limit)
+    return {"job_id": str(job.id), "status": "queued"}

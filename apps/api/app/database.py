@@ -46,3 +46,20 @@ async def get_pool() -> asyncpg.Pool:
     if _db_pool is None:
         raise RuntimeError("Database pool not initialized")
     return _db_pool
+
+
+async def ensure_schema() -> None:
+    """Idempotent schema additions (this repo has no Alembic migrations).
+
+    Runs on startup via the FastAPI lifespan. Safe to run repeatedly.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("ALTER TABLE trends ADD COLUMN IF NOT EXISTS trend_interest INTEGER")
+        await conn.execute("ALTER TABLE trends ADD COLUMN IF NOT EXISTS volume_source TEXT")
+        # Backfill provenance for any pre-existing hand-entered volumes.
+        await conn.execute(
+            "UPDATE trends SET volume_source = 'manual' "
+            "WHERE search_volume IS NOT NULL AND volume_source IS NULL"
+        )
+    logger.info("Schema ensured: trends.trend_interest, trends.volume_source")

@@ -6,7 +6,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from loguru import logger
 
 from app.config import settings
-from app.database import init_pool, close_pool
+from app.database import init_pool, close_pool, ensure_schema
 from app.core.sentry import init_sentry
 
 # Initialize Sentry before app creation
@@ -41,6 +41,10 @@ from app.api.v1 import (
 async def lifespan(app: FastAPI):
     logger.info("Starting up B2B Stickers API...")
     await init_pool()
+    try:
+        await ensure_schema()
+    except Exception as e:
+        logger.error(f"ensure_schema failed (continuing without it): {e}")
     yield
     logger.info("Shutting down B2B Stickers API...")
     await close_pool()

@@ -179,6 +179,47 @@ def generate_for_trend(self, trend_id: int, styles: list[str], designs_per_combo
 
 
 @shared_task(bind=True)
+def refresh_trend_volumes(self, limit: int = 200):
+    """Fill search_volume via Google Trends for trends lacking Keyword Planner data.
+
+    Keyword Planner volumes (volume_source='keyword_planner') are never overwritten.
+    """
+    async def _run():
+        await init_pool()
+        try:
+            pool = await get_pool()
+            rows = await pool.fetch(
+                "SELECT id, keyword FROM trends "
+                "WHERE volume_source IS DISTINCT FROM 'keyword_planner' "
+                "ORDER BY (search_volume IS NULL) DESC, id "
+                "LIMIT $1",
+                limit,
+            )
+            if not rows:
+                return {"updated": 0, "eligible": 0}
+            from app.services.keyword_volume import KeywordVolumeService, SCALE
+            svc = KeywordVolumeService()
+            interest = svc.fetch_interest([r["keyword"] for r in rows])
+            updated = 0
+            for r in rows:
+                score = interest.get(r["keyword"])
+                if score is None:
+                    continue
+                await pool.execute(
+                    "UPDATE trends SET trend_interest = $1, search_volume = $2, "
+                    "volume_source = 'google_trends' WHERE id = $3",
+                    int(score), int(score * SCALE), r["id"],
+                )
+                updated += 1
+            logger.info(f"refresh_trend_volumes: updated {updated}/{len(rows)} trends")
+            return {"updated": updated, "eligible": len(rows)}
+        finally:
+            await close_pool()
+
+    return asyncio.run(_run())
+
+
+@shared_task(bind=True)
 def generate_volume_weighted(self, target_total: int = 1000, mode: str = "production"):
     """Generate products distributed by search volume across all trends.
     
