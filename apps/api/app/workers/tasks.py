@@ -223,6 +223,62 @@ def refresh_trend_volumes(self, limit: int = 200):
 
 
 @shared_task(bind=True)
+def composite_product_mockups(self, product_id: int):
+    """Generate lifestyle mockups for an approved product and store the URLs (Tier 1).
+
+    Composites the sticker onto industry-relevant backdrops + a clean shot. No-ops
+    gracefully if object storage isn't configured yet.
+    """
+    async def _run():
+        await init_pool()
+        try:
+            pool = await get_pool()
+            row = await pool.fetchrow(
+                """
+                SELECT p.id, p.metadata, a.image_url, i.name AS industry_name
+                FROM products p
+                JOIN artwork a ON p.artwork_id = a.id
+                LEFT JOIN industries i ON p.industry_id = i.id
+                WHERE p.id = $1
+                """,
+                product_id,
+            )
+            if not row or not row["image_url"]:
+                return {"product_id": product_id, "mockups": 0, "skipped": "no image"}
+
+            from app.core.stickers.mockup_compositor import MockupCompositor
+            urls = await MockupCompositor().composite_and_store(row["image_url"], row["industry_name"])
+
+            meta = {}
+            if row["metadata"]:
+                try:
+                    meta = json.loads(row["metadata"])
+                except (TypeError, ValueError):
+                    meta = {}
+            meta["mockup_urls"] = urls
+            await pool.execute(
+                "UPDATE products SET metadata = $1 WHERE id = $2", json.dumps(meta), product_id
+            )
+            logger.info(f"composite_product_mockups: {len(urls)} mockups for product {product_id}")
+            return {"product_id": product_id, "mockups": len(urls)}
+        finally:
+            await close_pool()
+
+    return asyncio.run(_run())
+
+
+@shared_task(bind=True)
+def generate_winner_lifestyle(self, product_id: int):
+    """STUB (Tier 2): AI-generated lifestyle scenes for proven sellers.
+
+    Activates post-launch when sales data exists (needs Stripe + orders). Currently
+    a no-op placeholder so the trigger can be wired without firing.
+    """
+    logger.info(f"[stub] generate_winner_lifestyle({product_id}) — deferred until sales data exists")
+    return {"product_id": product_id, "status": "deferred"}
+
+
+@shared_task(bind=True)
 def generate_volume_weighted(self, target_total: int = 1000, mode: str = "production"):
     """Generate products distributed by search volume across all trends.
     

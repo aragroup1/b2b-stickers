@@ -1,3 +1,5 @@
+import io
+import uuid
 from pathlib import Path
 from typing import List, Optional
 from PIL import Image, ImageFilter
@@ -157,3 +159,90 @@ class MockupCompositor:
         except Exception as e:
             logger.error(f"Simple mockup generation failed: {e}")
             return sticker_image_path  # Fallback to original
+
+    async def composite_and_store(self, sticker_url: str, industry_name: Optional[str] = None) -> List[str]:
+        """Composite the sticker onto relevant product backdrops + a clean shot,
+        upload each to object storage, and return permanent public URLs.
+
+        Returns [] (no-op) if storage isn't configured, so it's safe to call before
+        R2/S3 is set up.
+        """
+        from app.services.s3_storage import S3Storage
+        from app.core.stickers.backdrops import ensure_backdrops, backdrops_for_industry
+
+        storage = S3Storage()
+        if not storage.is_configured():
+            logger.warning("Storage not configured — skipping lifestyle mockups (set up R2/S3 first)")
+            return []
+
+        sticker = await self._load_image(sticker_url)
+        if sticker is None:
+            return []
+
+        backdrops = await ensure_backdrops()
+        urls: List[str] = []
+
+        for name in backdrops_for_industry(industry_name):
+            base = await self._load_image(backdrops.get(name))
+            if base is None:
+                continue
+            try:
+                urls.append(await self._store_jpeg(storage, self._paste_centered(base, sticker)))
+            except Exception as e:
+                logger.warning(f"Mockup compositing failed for backdrop '{name}': {e}")
+
+        # Always add a clean white product shot
+        try:
+            urls.append(await self._store_jpeg(storage, self._clean_shot(sticker)))
+        except Exception as e:
+            logger.warning(f"Clean shot failed: {e}")
+
+        return urls
+
+    @staticmethod
+    async def _load_image(url: Optional[str]) -> Optional[Image.Image]:
+        if not url:
+            return None
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+            return Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        except Exception as e:
+            logger.warning(f"Could not load image {url}: {e}")
+            return None
+
+    @staticmethod
+    async def _store_jpeg(storage, image: Image.Image) -> str:
+        buf = io.BytesIO()
+        image.save(buf, "JPEG", quality=90, optimize=True)
+        key = f"mockups/{uuid.uuid4().hex}.jpg"
+        await storage.upload_bytes(buf.getvalue(), key, content_type="image/jpeg")
+        return storage.public_url(key)
+
+    def _paste_centered(self, base: Image.Image, sticker: Image.Image) -> Image.Image:
+        base = base.convert("RGBA")
+        bw, bh = base.size
+        size = min(bw, bh) // 3
+        st = sticker.resize((size, size), Image.Resampling.LANCZOS)
+        px, py = (bw - size) // 2, (bh - size) // 2
+        shadow = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        shadow.paste(Image.new("RGBA", st.size, (0, 0, 0, 80)), (px + 8, py + 8))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(6))
+        out = Image.alpha_composite(base, shadow)
+        out.paste(st, (px, py), st)
+        return out.convert("RGB")
+
+    def _clean_shot(self, sticker: Image.Image) -> Image.Image:
+        w = h = 1200
+        bg = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+        size = min(w, h) // 2
+        st = sticker.resize((size, size), Image.Resampling.LANCZOS)
+        px, py = (w - size) // 2, (h - size) // 2
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        shadow.paste(Image.new("RGBA", (size, size), (0, 0, 0, 60)), (px, py))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(15))
+        bg = Image.alpha_composite(bg, shadow)
+        bg.paste(st, (px, py), st)
+        return bg.convert("RGB")

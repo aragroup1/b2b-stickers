@@ -56,3 +56,19 @@ class S3Storage:
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=86400 * 7,
         )
+
+    def is_configured(self) -> bool:
+        """True when a bucket is set (storage usable). Lets callers no-op gracefully."""
+        return bool(self.bucket)
+
+    def exists(self, key: str) -> bool:
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except Exception:
+            return False
+
+    async def upload_bytes(self, data: bytes, key: str, content_type: str = "image/jpeg") -> str:
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+        logger.info(f"Uploaded s3://{self.bucket}/{key}")
+        return key

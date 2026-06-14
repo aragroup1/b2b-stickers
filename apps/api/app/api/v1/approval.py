@@ -18,6 +18,7 @@ class BulkApprovalRequest(BaseModel):
 async def bulk_approve(req: BulkApprovalRequest, db=Depends(get_db), _=Depends(require_admin)):
     new_status = "approved" if req.action == "approve" else "archived"
 
+    approved_ids = []
     async with db.transaction():
         for pid in req.product_ids:
             if req.action == "approve":
@@ -30,11 +31,18 @@ async def bulk_approve(req: BulkApprovalRequest, db=Depends(get_db), _=Depends(r
                         "UPDATE products SET status = $1, slug = $2 WHERE id = $3",
                         new_status, slug, pid
                     )
+                    approved_ids.append(pid)
             else:
                 await db.execute(
                     "UPDATE products SET status = $1 WHERE id = $2",
                     new_status, pid
                 )
+
+    # Generate lifestyle mockups for approved products (after the transaction commits)
+    if approved_ids:
+        from app.workers.tasks import composite_product_mockups
+        for pid in approved_ids:
+            composite_product_mockups.delay(pid)
 
     return {"updated": len(req.product_ids), "status": new_status}
 
@@ -60,6 +68,7 @@ async def auto_approve(req: AutoApprovalRequest, db=Depends(get_db)):
     )
 
     approved = 0
+    approved_ids = []
     async with db.transaction():
         for row in rows:
             slug = await generate_unique_slug(row["title"])
@@ -68,5 +77,10 @@ async def auto_approve(req: AutoApprovalRequest, db=Depends(get_db)):
                 slug, row["id"],
             )
             approved += 1
+            approved_ids.append(row["id"])
+
+    from app.workers.tasks import composite_product_mockups
+    for pid in approved_ids:
+        composite_product_mockups.delay(pid)
 
     return {"approved": approved}

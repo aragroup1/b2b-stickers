@@ -68,13 +68,9 @@ class ProductGenerationService:
                     json.dumps(result["attributes"]),
                 )
 
-                # Generate mockups (async but don't block on failure)
+                # Lifestyle mockups are generated on approval (Tier 1), not here — so
+                # we don't spend compositing designs that get rejected.
                 mockup_urls = []
-                try:
-                    mockup_paths = await self.mockups.generate_mockups(result["image_url"])
-                    mockup_urls = mockup_paths
-                except Exception as e:
-                    logger.warning(f"Mockup generation failed: {e}")
 
                 # Insert product (pending_approval)
                 product_id = await pool.fetchval(
