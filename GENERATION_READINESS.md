@@ -14,9 +14,9 @@ Last updated 2026-06-14.
 - [x] **Approval / rejection** — `/api/v1/approval/*` (approve, reject, auto-approve-by-quality); approved → storefront catalog.
 - [x] **Priced variants** — size × pack with retail + subscribe-and-save pricing.
 
-## 🛠️ Pending build (after R2 is live — built test-driven)
-- [ ] **Lifestyle Tier 1 (composite):** on approval, composite the sticker onto AI-generated blank-product backdrops → R2. (Decision: composite for all designs; AI scenes only for proven winners.)
-- [ ] **Lifestyle Tier 2 (AI for winners):** deferred — needs Stripe + real sales data to trigger.
+## 🧩 Built (code complete) — activates once R2 is live
+- [x] **Lifestyle Tier 1 (composite):** on approval, composites the sticker onto industry-relevant AI-generated backdrops + a clean shot → R2 (`composite_product_mockups`). Backdrops auto-generate on first approval. No-ops gracefully until R2 is configured.
+- [x] **Lifestyle Tier 2 (AI for winners):** wired stub (`generate_winner_lifestyle`) — deferred until Stripe + real sales data exist.
 
 ## ⏭️ Later (not generation-blocking)
 - [ ] **Stripe** — to actually take money (separate from generation).
