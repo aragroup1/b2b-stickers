@@ -117,7 +117,7 @@ class AIGenerator:
 
         key = await self.storage.upload(tmp_path)
         Path(tmp_path).unlink(missing_ok=True)
-        return await self.storage.get_presigned_url(key, expiry=86400 * 7)
+        return self.storage.public_url(key)
 
     async def batch_generate(
         self,

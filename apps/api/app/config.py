@@ -14,11 +14,13 @@ class Settings(BaseSettings):
     REPLICATE_API_TOKEN: str = ""
     OPENAI_API_KEY: str = ""
 
-    # Storage
+    # Storage (AWS S3 or S3-compatible like Cloudflare R2)
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
-    AWS_REGION: str = "eu-west-2"
+    AWS_REGION: str = "eu-west-2"  # use "auto" for Cloudflare R2
     S3_BUCKET: str = ""
+    S3_ENDPOINT_URL: str = ""      # set for R2: https://<account_id>.r2.cloudflarestorage.com
+    S3_PUBLIC_BASE_URL: str = ""   # public base for serving objects (R2 public/custom domain, or S3 public URL)
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

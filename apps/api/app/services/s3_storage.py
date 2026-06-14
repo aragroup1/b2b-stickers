@@ -20,6 +20,7 @@ class S3Storage:
         )
         self.client = session.client(
             "s3",
+            endpoint_url=settings.S3_ENDPOINT_URL or None,  # Cloudflare R2 if set, else AWS S3
             config=Config(signature_version="s3v4"),
         )
         self.bucket = settings.S3_BUCKET
@@ -37,4 +38,21 @@ class S3Storage:
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expiry,
+        )
+
+    def public_url(self, key: str) -> str:
+        """Permanent public URL for an uploaded object.
+
+        Requires the bucket to be publicly readable (R2 public bucket / custom
+        domain, or an S3 public bucket / CDN) via S3_PUBLIC_BASE_URL. Falls back
+        to an *expiring* presigned URL if that isn't configured, with a warning.
+        """
+        base = settings.S3_PUBLIC_BASE_URL.rstrip("/")
+        if base:
+            return f"{base}/{key}"
+        logger.warning("S3_PUBLIC_BASE_URL not set — returning an EXPIRING presigned URL")
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=86400 * 7,
         )
