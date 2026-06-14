@@ -7,6 +7,8 @@ from app.core.ai.generator import AIGenerator
 from app.core.stickers.variants import VariantGenerator
 from app.core.stickers.mockup_compositor import MockupCompositor
 from app.core.listings.content_builder import ListingContentBuilder
+from app.core.listings.seo_content import generate_seo
+from app.core.stickers.config import SIZES_INCHES, PACK_QUANTITIES
 from app.database import get_pool
 
 
@@ -29,6 +31,13 @@ class ProductGenerationService:
         trend = await pool.fetchrow("SELECT * FROM trends WHERE id = $1", trend_id)
         if not trend:
             raise ValueError(f"Trend {trend_id} not found")
+
+        industry_name = None
+        if trend["industry_id"]:
+            industry_name = await pool.fetchval(
+                "SELECT name FROM industries WHERE id = $1", trend["industry_id"]
+            )
+        seo = generate_seo(trend["keyword"], industry_name, SIZES_INCHES, PACK_QUANTITIES)
 
         product_ids = []
         for style in styles:
@@ -77,9 +86,9 @@ class ProductGenerationService:
                     artwork_id,
                     trend["industry_id"],
                     f"pending-{artwork_id}",
-                    f"{trend['keyword'].title()} Stickers",
-                    "",
-                    [],
+                    seo["title"],
+                    seo["description"],
+                    seo["tags"],
                     json.dumps({"mockup_urls": mockup_urls}),
                 )
 
