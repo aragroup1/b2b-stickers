@@ -4,7 +4,7 @@ Status of the pipeline that turns AI generation into sellable, SEO-ready, imaged
 Last updated 2026-06-14.
 
 ## ⛔ Blockers before a real batch
-- [ ] **Image storage (R2/S3)** — *your action*: create a Cloudflare R2 bucket + API token, then set these on Railway (web **and** worker): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION=auto`, `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_PUBLIC_BASE_URL`. Code is ready. Without it, generated images expire (~daily).
+- [ ] **Image storage (AWS S3)** — *your action*: create an S3 bucket (public-read via bucket policy) + an IAM access key, then set on Railway (web **and** worker): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` (e.g. `eu-west-2`), `S3_BUCKET`, `S3_PUBLIC_BASE_URL=https://<bucket>.s3.<region>.amazonaws.com`. Leave `S3_ENDPOINT_URL` unset (R2-only). Code is ready. Without it, generated images expire (~daily).
 - [ ] **Worker running** — `railway up -s fortunate-flow` (parked to save cost). Needed during generate + approve. `railway down -s fortunate-flow -y` afterwards.
 
 ## ✅ Done
