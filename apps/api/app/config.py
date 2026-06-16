@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # AI
     REPLICATE_API_TOKEN: str = ""
     OPENAI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+    VISION_MODEL: str = "claude-haiku-4-5"  # Claude vision model for the QA + spelling gate (set claude-sonnet-4-6 for higher accuracy)
 
     # Storage (AWS S3 or S3-compatible like Cloudflare R2)
     AWS_ACCESS_KEY_ID: str = ""

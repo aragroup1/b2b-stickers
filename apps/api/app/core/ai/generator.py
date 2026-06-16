@@ -80,9 +80,13 @@ class AIGenerator:
 
         temp_image_url = output_urls[0]
 
-        # Vision gate
-        vision_result = await self.vision.analyze(temp_image_url)
+        # Vision gate: safety + quality + text-spelling check (diffusion models garble text)
+        vision_result = await self.vision.analyze(temp_image_url, keyword)
         quality_score = vision_result.get("quality_score", 75.0)
+        if vision_result.get("text_present") and not vision_result.get("text_correct", True):
+            # Garbled/misspelled text on a sticker is unsellable — force-reject by zeroing quality
+            quality_score = min(quality_score, 10.0)
+            vision_result.setdefault("warnings", []).append("text failed spelling check — auto-rejected")
 
         # Upload to S3
         # For now, store the Replicate URL directly; in production we'd download and re-upload
