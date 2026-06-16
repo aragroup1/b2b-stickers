@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     S3_BUCKET: str = ""
     S3_ENDPOINT_URL: str = ""      # set for R2: https://<account_id>.r2.cloudflarestorage.com
     S3_PUBLIC_BASE_URL: str = ""   # public base for serving objects (R2 public/custom domain, or S3 public URL)
+    S3_KEY_PREFIX: str = "b2b-stickers"  # namespaces objects so we can safely share a bucket with other projects (e.g. POD)
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

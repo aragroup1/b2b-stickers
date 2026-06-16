@@ -6,6 +6,7 @@ from app.config import settings
 from app.core.ai.generator import AIGenerator
 from app.core.stickers.config import get_recurring_price
 from app.core.subscriptions.pricing import compute_recurring_amount
+from app.core.auth import require_admin
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -182,3 +183,39 @@ async def test_fulfillment(
         "quote": quote,
         "note": "Use POST /orders/{id}/fulfill to submit a real order",
     }
+
+
+@router.get("/storage-ready")
+async def storage_ready(_=Depends(require_admin)):
+    """One-call storage readiness: confirms the bucket is configured, writable, AND
+    publicly readable (catches account-level 'Block Public Access' overriding the
+    bucket policy). Admin-only; works in production (unlike the _require_admin gate)."""
+    import httpx
+    from app.services.s3_storage import S3Storage
+
+    storage = S3Storage()
+    if not storage.is_configured():
+        return {"ready": False, "reason": "S3_BUCKET not set"}
+
+    key = "healthcheck/ping.txt"
+    try:
+        await storage.upload_bytes(b"ok", key, content_type="text/plain")
+    except Exception as e:
+        return {"ready": False, "reason": f"write failed: {e}", "bucket": storage.bucket}
+
+    url = storage.public_url(key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+        public = resp.status_code == 200 and resp.text.strip() == "ok"
+        return {
+            "ready": public,
+            "bucket": storage.bucket,
+            "endpoint": settings.S3_ENDPOINT_URL or "aws-default",
+            "key_prefix": settings.S3_KEY_PREFIX,
+            "public_url_sample": url,
+            "public_read_status": resp.status_code,
+            "reason": None if public else f"object not publicly readable (GET -> {resp.status_code}); check bucket policy + account Block Public Access",
+        }
+    except Exception as e:
+        return {"ready": False, "reason": f"public GET failed: {e}", "public_url_sample": url}
