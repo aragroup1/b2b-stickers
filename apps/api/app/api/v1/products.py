@@ -184,6 +184,9 @@ async def update_product_status(
                 "UPDATE products SET status = $1, slug = $2 WHERE id = $3",
                 status, slug, id
             )
+            # Kick off lifestyle mockups (Tier 1) for the newly-approved product
+            from app.workers.tasks import composite_product_mockups
+            composite_product_mockups.delay(id)
     else:
         await db.execute(
             "UPDATE products SET status = $1 WHERE id = $2",
@@ -200,6 +203,7 @@ async def bulk_update_status(
     _=Depends(require_admin),
 ):
     updated = 0
+    approved_ids = []
     async with db.transaction():
         for pid in product_ids:
             if status == "approved":
@@ -211,11 +215,18 @@ async def bulk_update_status(
                         status, slug, pid
                     )
                     updated += 1
+                    approved_ids.append(pid)
             else:
                 await db.execute(
                     "UPDATE products SET status = $1 WHERE id = $2",
                     status, pid
                 )
                 updated += 1
+
+    # Kick off lifestyle mockups (Tier 1) for newly-approved products (after commit)
+    if approved_ids:
+        from app.workers.tasks import composite_product_mockups
+        for pid in approved_ids:
+            composite_product_mockups.delay(pid)
 
     return {"updated": updated, "status": status}
