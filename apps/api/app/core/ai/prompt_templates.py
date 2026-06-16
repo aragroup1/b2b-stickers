@@ -74,12 +74,25 @@ STYLE_PROMPTS = {
 }
 
 
+# Applied to every style so designs come out as ONE clean die-cut sticker, not a
+# scattered sheet/collage (the model's default for "sticker" prompts — see the
+# garbled multi-sticker reject that motivated this).
+_SINGLE_STICKER = (
+    "single centered die-cut sticker, one isolated design, centered composition, "
+    "plain solid white background, entire design fully visible and not cropped"
+)
+_ANTI_COLLAGE = (
+    "multiple stickers, sticker sheet, collage, tiled, scattered stickers, "
+    "grid of stickers, duplicated design, repeated motif, cropped, cut off"
+)
+
+
 def get_prompt(style: str, keyword: str) -> dict:
     """Return the full prompt config for a given style and keyword."""
     cfg = STYLE_PROMPTS.get(style, STYLE_PROMPTS["minimal_logo"])
     return {
-        "prompt": cfg["template"].format(keyword=keyword),
-        "negative_prompt": cfg["negative"],
+        "prompt": f"{cfg['template'].format(keyword=keyword)}, {_SINGLE_STICKER}",
+        "negative_prompt": f"{cfg['negative']}, {_ANTI_COLLAGE}",
         "preferred_model": cfg["preferred_model"],
         "sticker_optimized": cfg["sticker_optimized"],
     }
