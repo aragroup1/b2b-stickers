@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -29,10 +30,42 @@ class AIGenerator:
         mode: str = "production",
         budget_per_image: Optional[float] = None,
     ) -> dict:
-        model_cfg = self.selector.select(style, keyword, mode, budget_per_image)
-        prompt_cfg = get_prompt(style, keyword)
+        from app.core.ai.text_overlay import display_text, is_text_primary, render_text_sticker
 
+        model_cfg = self.selector.select(style, keyword, mode, budget_per_image)
         logger.info(f"Generating '{keyword}' with {model_cfg.key} ({model_cfg.replicate_model})")
+
+        # Text-primary designs (thank you, quotes, packaging seals): render the sticker
+        # programmatically so the words are correct by construction. Diffusion models leak
+        # and garble text — even a "no text" prompt for these keywords renders the model's
+        # own (often misspelled) words, which then collide with ours. Skipping the model is
+        # more reliable AND free.
+        if is_text_primary(style, keyword) and self.storage.is_configured():
+            words = display_text(keyword)
+            # uuid-derived seed: guaranteed unique per design regardless of the worker's
+            # global RNG state (Celery/libs may seed it to a fixed value at task start).
+            composed = render_text_sticker(words, seed=uuid.uuid4().int % (10 ** 9))
+            key = f"uploads/{uuid.uuid4()}.png"
+            await self.storage.upload_bytes(composed, key, content_type="image/png")
+            image_url = self.storage.public_url(key)
+            vision_result = await self.vision.analyze(image_url, keyword)
+            return {
+                "image_url": image_url,
+                "model_used": "programmatic-text",
+                "prompt": f"programmatic text sticker: {words!r}",
+                "negative_prompt": "",
+                "generation_cost": 0.0,
+                "quality_score": vision_result.get("quality_score", 90.0),
+                "attributes": {
+                    **vision_result.get("attributes", {}),
+                    "text_sticker": True,
+                    "display_text": words,
+                    "style": style,
+                },
+                "vision_warnings": vision_result.get("warnings", []),
+            }
+
+        prompt_cfg = get_prompt(style, keyword)
 
         # Mock generation mode when no valid Replicate token is configured
         if not settings.REPLICATE_API_TOKEN or settings.REPLICATE_API_TOKEN in ("r8_...", "r8_", ""):
@@ -80,22 +113,21 @@ class AIGenerator:
 
         temp_image_url = output_urls[0]
 
-        # Vision gate: safety + quality + text-spelling check (diffusion models garble text)
-        vision_result = await self.vision.analyze(temp_image_url, keyword)
-        quality_score = vision_result.get("quality_score", 75.0)
-        if vision_result.get("text_present") and not vision_result.get("text_correct", True):
-            # Garbled/misspelled text on a sticker is unsellable — force-reject by zeroing quality
-            quality_score = min(quality_score, 10.0)
-            vision_result.setdefault("warnings", []).append("text failed spelling check — auto-rejected")
-
-        # Upload to S3
-        # For now, store the Replicate URL directly; in production we'd download and re-upload
+        # Upload to S3 (illustration path — text-primary designs returned above).
         image_url = temp_image_url
         if settings.S3_BUCKET:
             try:
                 image_url = await self._upload_to_s3(temp_image_url)
             except Exception as e:
                 logger.warning(f"S3 upload failed, using Replicate URL: {e}")
+
+        # Vision gate (safety + quality). Illustrations shouldn't carry text; if the model
+        # leaked garbled words, reject by zeroing quality.
+        vision_result = await self.vision.analyze(image_url, keyword)
+        quality_score = vision_result.get("quality_score", 75.0)
+        if vision_result.get("text_present") and not vision_result.get("text_correct", True):
+            quality_score = min(quality_score, 10.0)
+            vision_result.setdefault("warnings", []).append("text failed spelling check — auto-rejected")
 
         return {
             "image_url": image_url,

@@ -12,6 +12,7 @@ flower==2.0.1
 pillow==11.0.0
 opencv-python-headless==4.8.1.78
 numpy==1.26.4
+matplotlib==3.9.2
 replicate==0.34.0
 openai==1.54.0
 stripe==11.0.0

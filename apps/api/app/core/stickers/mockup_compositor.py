@@ -221,28 +221,33 @@ class MockupCompositor:
         await storage.upload_bytes(buf.getvalue(), key, content_type="image/jpeg")
         return storage.public_url(key)
 
+    @staticmethod
+    def _drop_shadow(canvas_size, sticker: Image.Image, offset, opacity: float, blur: int) -> Image.Image:
+        """A soft shadow shaped by the sticker's die-cut alpha (not a square)."""
+        sil = Image.new("RGBA", sticker.size, (0, 0, 0, 0))
+        sil.putalpha(sticker.split()[3].point(lambda a: int(a * opacity)))
+        shadow = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+        shadow.alpha_composite(sil, offset)
+        return shadow.filter(ImageFilter.GaussianBlur(blur))
+
     def _paste_centered(self, base: Image.Image, sticker: Image.Image) -> Image.Image:
         base = base.convert("RGBA")
         bw, bh = base.size
-        size = min(bw, bh) // 3
+        size = max(1, min(bw, bh) // 5)            # realistic small sticker, not a billboard
         st = sticker.resize((size, size), Image.Resampling.LANCZOS)
-        px, py = (bw - size) // 2, (bh - size) // 2
-        shadow = Image.new("RGBA", base.size, (0, 0, 0, 0))
-        shadow.paste(Image.new("RGBA", st.size, (0, 0, 0, 80)), (px + 8, py + 8))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(6))
+        px, py = (bw - size) // 2, int(bh * 0.42)  # sit on the product face, not floating centre
+        shadow = self._drop_shadow(base.size, st, (px + 10, py + 12), 0.45, 10)
         out = Image.alpha_composite(base, shadow)
         out.paste(st, (px, py), st)
         return out.convert("RGB")
 
     def _clean_shot(self, sticker: Image.Image) -> Image.Image:
         w = h = 1200
-        bg = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-        size = min(w, h) // 2
+        bg = Image.new("RGBA", (w, h), (247, 247, 249, 255))   # soft neutral studio
+        size = max(1, min(w, h) * 2 // 5)
         st = sticker.resize((size, size), Image.Resampling.LANCZOS)
         px, py = (w - size) // 2, (h - size) // 2
-        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        shadow.paste(Image.new("RGBA", (size, size), (0, 0, 0, 60)), (px, py))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(15))
+        shadow = self._drop_shadow((w, h), st, (px + 6, py + 16), 0.35, 18)
         bg = Image.alpha_composite(bg, shadow)
         bg.paste(st, (px, py), st)
         return bg.convert("RGB")
