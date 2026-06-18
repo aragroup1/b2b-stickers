@@ -870,12 +870,12 @@ export default function GeneratePage() {
                     isSelected ? "ring-2 ring-blue-500" : ""
                   }`}
                 >
-                  <div className="aspect-video bg-gray-100 relative">
+                  <div className="aspect-square bg-gray-100 relative">
                     {product.image_url ? (
                       <img
                         src={product.image_url}
                         alt={product.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-400">
