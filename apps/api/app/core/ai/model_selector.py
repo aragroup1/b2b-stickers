@@ -59,9 +59,14 @@ class IntelligentModelSelector:
         if mode == "testing":
             return MODELS["flux-schnell"]
 
+        # flux-schnell tiles designs into sticker-sheets and ignores single-subject
+        # instructions, so never use it for real products (only "testing" mode above).
+        if cfg.key == "flux-schnell":
+            cfg = MODELS["flux-dev"]
+
         if budget_per_image is not None and cfg.cost_per_image > budget_per_image:
-            # Downgrade to fit budget
-            for key in ["flux-schnell", "ideogram-turbo", "flux-dev", "flux-1.1-pro"]:
+            # Downgrade to fit budget, but never below flux-dev (schnell clusters).
+            for key in ["flux-dev", "ideogram-turbo", "flux-1.1-pro"]:
                 candidate = MODELS[key]
                 if candidate.cost_per_image <= budget_per_image:
                     return candidate

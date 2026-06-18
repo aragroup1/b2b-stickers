@@ -78,12 +78,14 @@ STYLE_PROMPTS = {
 # scattered sheet/collage (the model's default for "sticker" prompts — see the
 # garbled multi-sticker reject that motivated this).
 _SINGLE_STICKER = (
-    "single centered die-cut sticker, one isolated design, centered composition, "
-    "plain solid white background, entire design fully visible and not cropped"
+    "ONE single die-cut sticker, a single isolated subject centered with generous "
+    "empty margin around it, one design only, plain solid white background, "
+    "entire design fully visible and not cropped"
 )
 _ANTI_COLLAGE = (
-    "multiple stickers, sticker sheet, collage, tiled, scattered stickers, "
-    "grid of stickers, duplicated design, repeated motif, cropped, cut off"
+    "multiple stickers, two stickers, several stickers, pair of stickers, set of stickers, "
+    "sticker sheet, collage, tiled, scattered stickers, grid of stickers, pattern, "
+    "duplicated design, repeated motif, cropped, cut off"
 )
 
 
