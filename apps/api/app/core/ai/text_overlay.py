@@ -52,6 +52,51 @@ def display_text(keyword: str) -> str:
     return (t or keyword or "").title()
 
 
+# keyword -> decorative motif (themed WITHOUT naming the words, so the model doesn't render text)
+_MOTIFS = [
+    (re.compile(r"thank", re.I), "pastel hearts, blooming flowers and gentle sparkles"),
+    (re.compile(r"birthday", re.I), "balloons, confetti, party streamers and a little cake"),
+    (re.compile(r"wedding|married|favou?r", re.I), "delicate florals, rings and soft leaves"),
+    (re.compile(r"christmas|holiday|merry", re.I), "holly, snowflakes, baubles and pine sprigs"),
+    (re.compile(r"baby", re.I), "soft clouds, tiny stars and little hearts"),
+    (re.compile(r"welcome|hello", re.I), "cheerful flowers and a smiling sun"),
+    (re.compile(r"good luck|congrat|well done", re.I), "stars, sparkles and laurel leaves"),
+    (re.compile(r"handmade|made with love", re.I), "botanical sprigs, dots and a needle and thread"),
+    (re.compile(r"fragile", re.I), "simple leaves, dots and soft geometric shapes"),
+    (re.compile(r"get well|sorry", re.I), "gentle flowers, leaves and a warm little sun"),
+]
+_DEFAULT_MOTIF = "pastel flowers, hearts and gentle sparkles"
+
+
+def _motif_for(keyword: str) -> str:
+    for rx, motif in _MOTIFS:
+        if rx.search(keyword or ""):
+            return motif
+    return _DEFAULT_MOTIF
+
+
+def illustration_overlay_prompt(keyword: str) -> dict:
+    """A text-FREE decorative illustration prompt with a clear empty centre for the
+    overlaid words. The motif is themed to the keyword WITHOUT naming it, so the model
+    has no reason to render its own (garbled) text."""
+    motif = _motif_for(keyword)
+    return {
+        "prompt": (
+            f"kawaii sticker illustration of {motif}, cute soft pastel colours, charming "
+            "hand-drawn style, arranged as a decorative frame around a large clear empty "
+            "white centre, one single centered die-cut sticker, plain solid white background, "
+            "entire design fully visible and not cropped, absolutely no text, no words, "
+            "no letters, no captions, no numbers"
+        ),
+        "negative_prompt": (
+            "text, words, letters, typography, captions, numbers, watermark, signature, "
+            "multiple stickers, sticker sheet, collage, tiled, scattered stickers, grid, "
+            "duplicated, repeated motif, cropped, cut off, photorealistic human faces, "
+            "fingers, hands, copyrighted logos, brand names"
+        ),
+    }
+
+
 def _find_font(size: int) -> ImageFont.FreeTypeFont:
     candidates = []
     try:
@@ -175,7 +220,7 @@ def overlay(image_bytes: bytes, text: str) -> bytes:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     W, H = img.size
     draw = ImageDraw.Draw(img)
-    lines, font = _fit_font(draw, text, int(W * 0.78), int(H * 0.55), int(H * 0.24))
+    lines, font = _fit_font(draw, text, int(W * 0.64), int(H * 0.44), int(H * 0.20))
     _draw_lines(draw, W, H, lines, font, (36, 36, 36, 255), halo=True)
     out = io.BytesIO()
     img.convert("RGB").save(out, "PNG")

@@ -30,40 +30,17 @@ class AIGenerator:
         mode: str = "production",
         budget_per_image: Optional[float] = None,
     ) -> dict:
-        from app.core.ai.text_overlay import display_text, is_text_primary, render_text_sticker
+        from app.core.ai.text_overlay import is_text_primary
 
         model_cfg = self.selector.select(style, keyword, mode, budget_per_image)
         logger.info(f"Generating '{keyword}' with {model_cfg.key} ({model_cfg.replicate_model})")
 
-        # Text-primary designs (thank you, quotes, packaging seals): render the sticker
-        # programmatically so the words are correct by construction. Diffusion models leak
-        # and garble text — even a "no text" prompt for these keywords renders the model's
-        # own (often misspelled) words, which then collide with ours. Skipping the model is
-        # more reliable AND free.
+        # Text-led designs (thank you, quotes, packaging seals): a text-FREE decorative
+        # illustration with the EXACT words overlaid in a real font — the cute illustrated
+        # look, but spelling guaranteed by the overlay (the model never renders the words).
+        # Falls back to a programmatic seal if generation fails.
         if is_text_primary(style, keyword) and self.storage.is_configured():
-            words = display_text(keyword)
-            # uuid-derived seed: guaranteed unique per design regardless of the worker's
-            # global RNG state (Celery/libs may seed it to a fixed value at task start).
-            composed = render_text_sticker(words, seed=uuid.uuid4().int % (10 ** 9))
-            key = f"uploads/{uuid.uuid4()}.png"
-            await self.storage.upload_bytes(composed, key, content_type="image/png")
-            image_url = self.storage.public_url(key)
-            vision_result = await self.vision.analyze(image_url, keyword)
-            return {
-                "image_url": image_url,
-                "model_used": "programmatic-text",
-                "prompt": f"programmatic text sticker: {words!r}",
-                "negative_prompt": "",
-                "generation_cost": 0.0,
-                "quality_score": vision_result.get("quality_score", 90.0),
-                "attributes": {
-                    **vision_result.get("attributes", {}),
-                    "text_sticker": True,
-                    "display_text": words,
-                    "style": style,
-                },
-                "vision_warnings": vision_result.get("warnings", []),
-            }
+            return await self._generate_text_design(keyword, style)
 
         prompt_cfg = get_prompt(style, keyword)
 
@@ -137,6 +114,60 @@ class AIGenerator:
             "generation_cost": model_cfg.cost_per_image,
             "quality_score": quality_score,
             "attributes": vision_result.get("attributes", {}),
+            "vision_warnings": vision_result.get("warnings", []),
+        }
+
+    async def _generate_text_design(self, keyword: str, style: str) -> dict:
+        """Text-led design: a text-free decorative illustration with the exact words
+        overlaid in a real font (correct spelling), with a programmatic-seal fallback."""
+        from app.core.ai.text_overlay import (
+            display_text,
+            illustration_overlay_prompt,
+            overlay,
+            render_text_sticker,
+        )
+        import httpx
+
+        words = display_text(keyword)
+        cfg = illustration_overlay_prompt(keyword)
+        cost, model_used = 0.0, "programmatic-text"
+        try:
+            urls = await self.provider.generate(
+                model="black-forest-labs/flux-dev",  # more prompt-obedient than schnell: single subject, no text
+                prompt=cfg["prompt"],
+                negative_prompt=cfg["negative_prompt"],
+                width=1024,
+                height=1024,
+                num_outputs=1,
+            )
+            if not urls:
+                raise RuntimeError("no illustration output")
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(urls[0])
+                resp.raise_for_status()
+            composed = overlay(resp.content, words)
+            cost, model_used = 0.025, "flux-dev+overlay"
+        except Exception as e:
+            logger.warning(f"Illustrated text design failed ({e}); falling back to programmatic seal")
+            composed = render_text_sticker(words, seed=uuid.uuid4().int % (10 ** 9))
+
+        key = f"uploads/{uuid.uuid4()}.png"
+        await self.storage.upload_bytes(composed, key, content_type="image/png")
+        image_url = self.storage.public_url(key)
+        vision_result = await self.vision.analyze(image_url, keyword)
+        return {
+            "image_url": image_url,
+            "model_used": model_used,
+            "prompt": cfg["prompt"],
+            "negative_prompt": cfg["negative_prompt"],
+            "generation_cost": cost,
+            "quality_score": vision_result.get("quality_score", 85.0),
+            "attributes": {
+                **vision_result.get("attributes", {}),
+                "text_overlay": True,
+                "display_text": words,
+                "style": style,
+            },
             "vision_warnings": vision_result.get("warnings", []),
         }
 
